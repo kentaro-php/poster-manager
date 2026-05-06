@@ -323,6 +323,7 @@ function renderListView() {
       || p.provider_name
       || (p.notes ? String(p.notes).split('\n')[0].slice(0, 40) : '')
       || '名称未設定';
+    const navUrl = buildNavUrl(p);
     const div = document.createElement('div');
     div.className = 'result-item';
     div.innerHTML =
@@ -333,6 +334,7 @@ function renderListView() {
         '<div class="result-item-row">' +
           '<div class="result-name">' + escapeHtml(displayName) + '</div>' +
           '<span class="status-badge ' + status.className + '">' + escapeHtml(p.status || '—') + '</span>' +
+          (navUrl ? '<a class="item-nav-btn" href="' + navUrl + '" target="_blank" rel="noopener" aria-label="ナビ起動">🧭</a>' : '') +
         '</div>' +
         '<div class="result-meta">' +
           (p.provider_name && p.provider_name !== displayName ? '<span>' + escapeHtml(p.provider_name) + '</span>' : '') +
@@ -341,6 +343,11 @@ function renderListView() {
         '</div>' +
       '</div>';
     setupSwipeableItem(div, p);
+    // ナビボタンクリックは詳細を開かない
+    const navBtn = div.querySelector('.item-nav-btn');
+    if (navBtn) {
+      navBtn.addEventListener('click', (e) => e.stopPropagation());
+    }
     list.appendChild(div);
   });
   if (state.filteredPosters.length > 200) {
@@ -400,6 +407,17 @@ function applyFilters() {
   });
 }
 
+/* ============ ナビURL構築ヘルパー ============ */
+function buildNavUrl(p) {
+  if (p.lat && p.lng) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+  }
+  if (p.address) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(p.address)}`;
+  }
+  return null;
+}
+
 /* ============ 詳細・編集シート ============ */
 function openSheet(poster) {
   state.selectedPoster = poster ? { ...poster } : { status: '貼付済', count: 1 };
@@ -413,11 +431,7 @@ function openSheet(poster) {
       || (state.selectedPoster.notes ? String(state.selectedPoster.notes).split('\n')[0].slice(0, 40) : '')
       || 'ポスター詳細');
 
-  const navUrl = state.selectedPoster.lat && state.selectedPoster.lng
-    ? `https://www.google.com/maps/dir/?api=1&destination=${state.selectedPoster.lat},${state.selectedPoster.lng}`
-    : (state.selectedPoster.address
-      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(state.selectedPoster.address)}`
-      : null);
+  const navUrl = buildNavUrl(state.selectedPoster);
 
   document.getElementById('sheetContent').innerHTML = `
     <div class="sheet-header">
@@ -451,7 +465,7 @@ function openSheet(poster) {
         </div>
 
         <div class="form-group">
-          <label>提供者氏名</label>
+          <label>氏名</label>
           <input type="text" id="f_provider" value="${escapeAttr(state.selectedPoster.provider_name || '')}" placeholder="山田太郎">
         </div>
 
@@ -727,6 +741,10 @@ function setupTabs() {
       } else if (target === 'mapView' && state.map) {
         setTimeout(() => state.map.invalidateSize(), 100);
         buildMapMarkers(document.getElementById('mapSearchInput').value);
+        // 検索入力が無ければ全ピンフィット
+        if (!document.getElementById('mapSearchInput').value) {
+          setTimeout(() => fitMapToMarkers(), 150);
+        }
       } else if (target === 'listView') {
         renderFilterChips();
         renderListView();
@@ -755,7 +773,24 @@ function initMap() {
   state.map.addLayer(state.cluster);
 
   buildMapMarkers('');
+  fitMapToMarkers();
   attemptLocate();
+}
+
+/* 全ピンが入る範囲に地図を自動フィット */
+function fitMapToMarkers() {
+  if (!state.map) return;
+  const withCoords = state.posters.filter(p => {
+    const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
+    return !isNaN(lat) && !isNaN(lng);
+  });
+  if (withCoords.length === 0) return;
+  if (withCoords.length === 1) {
+    state.map.setView([parseFloat(withCoords[0].lat), parseFloat(withCoords[0].lng)], 16);
+    return;
+  }
+  const bounds = L.latLngBounds(withCoords.map(p => [parseFloat(p.lat), parseFloat(p.lng)]));
+  state.map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
 }
 
 function guessMapCenter() {
