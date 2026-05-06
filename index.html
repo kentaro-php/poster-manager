@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+
+<title>ポスター管理</title>
+<meta name="description" content="政党ポスター掲示場所の管理ツール">
+<meta name="robots" content="noindex">
+
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=DM+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
+
+<link rel="stylesheet" href="assets/styles.css">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" defer></script>
+</head>
+<body>
+
+<!-- 初回設定モーダル -->
+<div class="setup-modal" id="setupModal">
+  <div class="setup-card">
+    <div class="setup-icon">📋</div>
+    <h2>初回設定</h2>
+    <p class="setup-desc">使用するスタッフ名と接続先を設定してください。<br>この設定は端末ごとに保存されます。</p>
+
+    <div class="form-group">
+      <label>スタッフ名（必須）</label>
+      <input type="text" id="setupName" placeholder="例: けんたろう、田中さん" required>
+    </div>
+
+    <div class="form-group">
+      <label>Apps Script URL（必須）</label>
+      <input type="url" id="setupGasUrl" placeholder="https://script.google.com/macros/s/.../exec" required>
+      <small>Google Apps Script のWebアプリURL</small>
+    </div>
+
+    <div class="form-group">
+      <label>写真アップロード Worker URL（オプション）</label>
+      <input type="url" id="setupPhotoUrl" placeholder="https://photo-upload.xxx.workers.dev">
+      <small>未設定の場合、写真アップロードは無効</small>
+    </div>
+
+    <button class="btn btn-primary btn-large" id="setupSave">設定を保存して開始</button>
+  </div>
+</div>
+
+<!-- メイン -->
+<div class="app" id="app" style="display:none">
+
+  <!-- ダッシュボード -->
+  <div class="view active" id="dashView">
+    <header class="hero">
+      <div class="hero-meta">
+        <span class="user-pill" id="userPill">—</span>
+        <button class="btn-tiny" id="settingsBtn">⚙</button>
+      </div>
+      <h1>ポスター管理</h1>
+      <div class="hero-sub" id="heroSub">読込中…</div>
+    </header>
+
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">総掲示場所</div>
+        <div class="kpi-value" id="kpiTotal">—</div>
+        <div class="kpi-sub" id="kpiTotalSub">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">貼付済</div>
+        <div class="kpi-value" id="kpiDone">—</div>
+        <div class="kpi-sub" id="kpiDoneSub">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">要確認</div>
+        <div class="kpi-value" id="kpiNeed">—</div>
+        <div class="kpi-sub">点検が必要</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">合計枚数</div>
+        <div class="kpi-value" id="kpiCount">—</div>
+        <div class="kpi-sub">枚</div>
+      </div>
+    </div>
+
+    <section class="section">
+      <div class="section-head">
+        <div class="section-title"><span class="section-emoji">📊</span>ステータス別</div>
+        <button class="btn-tiny" id="refreshBtn">🔄 更新</button>
+      </div>
+      <div class="legend-row" id="statusLegend"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div class="section-title"><span class="section-emoji">👥</span>担当者別</div>
+      </div>
+      <div class="rank-list" id="staffRank"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div class="section-title"><span class="section-emoji">📝</span>最近の更新</div>
+      </div>
+      <div class="log-list" id="recentLog"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div class="section-title"><span class="section-emoji">📥</span>CSVインポート</div>
+      </div>
+      <p class="section-desc">Excelで作ったCSVをアップロードして一括登録</p>
+      <input type="file" id="csvInput" accept=".csv,text/csv" style="display:none">
+      <button class="btn btn-secondary" id="csvBtn">CSVファイルを選択</button>
+      <div id="csvResult" class="csv-result"></div>
+    </section>
+  </div>
+
+  <!-- 一覧ビュー -->
+  <div class="view" id="listView">
+    <header class="hero">
+      <div class="hero-meta">
+        <span class="user-pill" id="userPill2">—</span>
+      </div>
+      <h1>ポスター一覧</h1>
+      <div class="hero-sub" id="listSub">—</div>
+    </header>
+    <section class="section">
+      <div class="search-row">
+        <div class="search-box">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input class="search-input" id="searchInput" placeholder="住所・提供者・備考で検索" autocomplete="off">
+        </div>
+      </div>
+      <div class="filter-chips" id="filterChips"></div>
+      <div class="result-list" id="resultList">
+        <div class="result-empty">読込中…</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 地図ビュー -->
+  <div class="view" id="mapView">
+    <div class="map-view">
+      <div class="map-header">
+        <div class="map-search-wrap">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input class="map-search" id="mapSearchInput" placeholder="地図上で絞り込む" autocomplete="off">
+        </div>
+        <button class="btn-icon" id="locateMeBtn" aria-label="現在地">📍</button>
+      </div>
+      <div id="map"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 追加 FAB -->
+<button class="fab" id="fabAdd" aria-label="新規追加" style="display:none">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+</button>
+
+<!-- タブバー -->
+<nav class="tabbar" id="tabbar" style="display:none">
+  <button class="tab active" data-view="dashView">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+    ダッシュボード
+  </button>
+  <button class="tab" data-view="listView">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    一覧
+  </button>
+  <button class="tab" data-view="mapView">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    地図
+  </button>
+</nav>
+
+<!-- 詳細・編集シート -->
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+<aside class="sheet" id="sheet">
+  <div class="sheet-handle" id="sheetHandle"></div>
+  <button class="sheet-close" id="sheetClose" aria-label="閉じる">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+  <div id="sheetContent"></div>
+</aside>
+
+<!-- トースト通知 -->
+<div class="toast" id="toast"></div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
