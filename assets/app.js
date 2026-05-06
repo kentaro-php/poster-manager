@@ -795,6 +795,72 @@ function initMap() {
   buildMapMarkers('');
   fitMapToMarkers();
   attemptLocate();
+
+  // 住所はあるが座標が無いものを自動ジオコーディング
+  setTimeout(() => geocodePostersWithoutCoords(), 1000);
+}
+
+/* 住所はあるが lat/lng がないポスターを Nominatim で自動ジオコーディング */
+async function geocodePostersWithoutCoords() {
+  const CACHE_KEY = 'poster_geocode_v1';
+  let cache = {};
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) cache = JSON.parse(raw);
+  } catch (e) {}
+
+  const targets = state.posters.filter(p => {
+    if (!p.address) return false;
+    if (p.lat && p.lng) return false;
+    return true;
+  });
+  if (targets.length === 0) return;
+
+  showToast(`${targets.length}件の住所を地図上で位置取得中…`);
+
+  let done = 0;
+  for (const p of targets) {
+    let coords = cache[p.address];
+    if (!coords) {
+      try {
+        const addr = p.address.startsWith('船橋市') ? p.address : '船橋市' + p.address;
+        const url = 'https://nominatim.openstreetmap.org/search?q=' +
+          encodeURIComponent('千葉県' + addr) +
+          '&format=json&limit=1&countrycodes=jp&accept-language=ja';
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data && data[0]) {
+          const lat = parseFloat(data[0].lat);
+          const lon = parseFloat(data[0].lon);
+          if (lat > 35.55 && lat < 35.85 && lon > 139.85 && lon < 140.15) {
+            coords = { lat, lng: lon };
+            cache[p.address] = coords;
+          }
+        }
+      } catch (e) {}
+      // Nominatim 利用規約（1秒あたり1リクエスト）
+      await new Promise(r => setTimeout(r, 1100));
+    }
+    if (coords) {
+      // メモリ上の posters にも反映（地図にも即反映）
+      p.lat = coords.lat;
+      p.lng = coords.lng;
+      // バックグラウンドでスプレッドシートにも保存
+      try {
+        await updatePoster({ id: p.id, lat: coords.lat, lng: coords.lng });
+      } catch (e) {}
+    }
+    done++;
+    if (done % 5 === 0 || done === targets.length) {
+      buildMapMarkers(document.getElementById('mapSearchInput').value || '');
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (e) {}
+    }
+  }
+
+  buildMapMarkers(document.getElementById('mapSearchInput').value || '');
+  fitMapToMarkers();
+  showToast('位置情報の取得完了', 'success');
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (e) {}
 }
 
 /* 全ピンが入る範囲に地図を自動フィット */
