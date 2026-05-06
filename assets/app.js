@@ -245,6 +245,67 @@ function formatRelativeTime(timestamp) {
 }
 
 /* ============ 一覧ビュー ============ */
+function setupSwipeableItem(div, poster) {
+  const content = div.querySelector('.result-item-content');
+  const deleteBtn = div.querySelector('.result-item-delete');
+
+  // 削除ボタンクリック
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const name = poster.address || poster.provider_name || poster.id || 'このポスター';
+    if (!confirm(`「${name}」を削除しますか?`)) {
+      div.classList.remove('swiped');
+      return;
+    }
+    try {
+      await deletePoster(poster.id);
+      showToast('削除しました', 'success');
+      await reload();
+    } catch (e) {
+      showToast('削除失敗: ' + e.message, 'error');
+      div.classList.remove('swiped');
+    }
+  });
+
+  // タップで詳細を開く（スワイプ中じゃない時）
+  content.addEventListener('click', (e) => {
+    if (div.classList.contains('swiped')) {
+      // 既にスワイプ中なら閉じるだけ
+      div.classList.remove('swiped');
+      return;
+    }
+    openSheet(poster);
+  });
+
+  // スワイプ検出
+  let startX = 0;
+  let currentX = 0;
+  let dragging = false;
+
+  content.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+    currentX = startX;
+    dragging = true;
+  }, { passive: true });
+
+  content.addEventListener('touchmove', (e) => {
+    if (!dragging) return;
+    currentX = e.touches[0].clientX;
+  }, { passive: true });
+
+  content.addEventListener('touchend', () => {
+    if (!dragging) return;
+    dragging = false;
+    const diff = currentX - startX;
+    // 左に40px以上スワイプで削除ボタン表示
+    if (diff < -40) {
+      div.classList.add('swiped');
+    } else if (diff > 40) {
+      div.classList.remove('swiped');
+    }
+  });
+}
+
 function renderListView() {
   applyFilters();
   const list = document.getElementById('resultList');
@@ -265,16 +326,21 @@ function renderListView() {
     const div = document.createElement('div');
     div.className = 'result-item';
     div.innerHTML =
-      '<div class="result-item-row">' +
-        '<div class="result-name">' + escapeHtml(displayName) + '</div>' +
-        '<span class="status-badge ' + status.className + '">' + escapeHtml(p.status || '—') + '</span>' +
+      '<div class="result-item-actions">' +
+        '<button class="result-item-delete" type="button">🗑 削除</button>' +
       '</div>' +
-      '<div class="result-meta">' +
-        (p.provider_name && p.provider_name !== displayName ? '<span>' + escapeHtml(p.provider_name) + '</span>' : '') +
-        (p.count ? '<span>· ' + p.count + '枚</span>' : '') +
-        (p.updated_by ? '<span>· ' + escapeHtml(p.updated_by) + '</span>' : '') +
+      '<div class="result-item-content">' +
+        '<div class="result-item-row">' +
+          '<div class="result-name">' + escapeHtml(displayName) + '</div>' +
+          '<span class="status-badge ' + status.className + '">' + escapeHtml(p.status || '—') + '</span>' +
+        '</div>' +
+        '<div class="result-meta">' +
+          (p.provider_name && p.provider_name !== displayName ? '<span>' + escapeHtml(p.provider_name) + '</span>' : '') +
+          (p.count ? '<span>· ' + p.count + '枚</span>' : '') +
+          (p.updated_by ? '<span>· ' + escapeHtml(p.updated_by) + '</span>' : '') +
+        '</div>' +
       '</div>';
-    div.addEventListener('click', () => openSheet(p));
+    setupSwipeableItem(div, p);
     list.appendChild(div);
   });
   if (state.filteredPosters.length > 200) {
@@ -415,13 +481,14 @@ function openSheet(poster) {
           <button type="button" class="btn btn-secondary" id="btnAddPhoto" style="width:100%">📷 写真を撮影・選択</button>
           <div class="photo-gallery" id="photoGallery"></div>
         </div>
-
-        <div class="btn-row">
-          <button type="submit" class="btn btn-primary">💾 ${isNew ? '追加' : '保存'}</button>
-          ${navUrl ? `<a href="${navUrl}" target="_blank" rel="noopener" class="btn">🧭 ナビ開始</a>` : ''}
-        </div>
-        ${!isNew ? '<div class="btn-row"><button type="button" class="btn btn-danger" id="btnDelete">🗑 削除</button></div>' : ''}
       </form>
+    </div>
+    <div class="sheet-footer">
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" id="btnSave">💾 ${isNew ? '追加' : '保存'}</button>
+        ${navUrl ? `<a href="${navUrl}" target="_blank" rel="noopener" class="btn">🧭 ナビ</a>` : ''}
+      </div>
+      ${!isNew ? '<button type="button" class="btn btn-danger" id="btnDelete" style="width:100%">🗑 このポスター情報を削除</button>' : ''}
     </div>
   `;
 
@@ -499,7 +566,7 @@ function openSheet(poster) {
   }
 
   // フォーム送信
-  document.getElementById('posterForm').addEventListener('submit', async (e) => {
+  document.getElementById('btnSave').addEventListener('click', async (e) => {
     e.preventDefault();
     const obj = collectFormData();
     try {
@@ -722,14 +789,19 @@ function buildMapMarkers(query) {
     });
     marker.bindPopup(() => {
       const div = document.createElement('div');
+      const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+      const title = p.address || p.provider_name || (p.notes ? String(p.notes).split('\n')[0].slice(0, 30) : '名称未設定');
       div.innerHTML =
-        '<div style="font-weight:600;margin-bottom:2px">' + escapeHtml(p.address || '') + '</div>' +
-        '<div style="color:var(--text-2);font-size:12px;margin-bottom:6px">' +
-          '<span class="status-badge ' + status.className + '" style="font-size:10px">' + escapeHtml(p.status) + '</span> ' +
+        '<div style="font-weight:600;margin-bottom:4px;font-size:14px">' + escapeHtml(title) + '</div>' +
+        '<div style="color:var(--text-2);font-size:13px;margin-bottom:10px">' +
+          '<span class="status-badge ' + status.className + '" style="font-size:12px">' + escapeHtml(p.status) + '</span> ' +
           (p.count ? p.count + '枚' : '') +
         '</div>' +
-        '<a class="popup-link" data-action="detail" style="color:var(--primary);font-weight:600;font-size:12px;cursor:pointer">詳細・編集 →</a>';
-      div.querySelector('[data-action="detail"]').addEventListener('click', () => {
+        '<div style="display:flex;gap:6px">' +
+          '<a href="' + navUrl + '" target="_blank" rel="noopener" style="flex:1;background:var(--primary);color:white;padding:8px 10px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;text-decoration:none">🧭 ナビ起動</a>' +
+          '<a class="popup-detail-link" style="flex:1;background:var(--bg-3);color:var(--text);padding:8px 10px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;cursor:pointer">📝 編集</a>' +
+        '</div>';
+      div.querySelector('.popup-detail-link').addEventListener('click', () => {
         state.map.closePopup();
         openSheet(p);
       });
