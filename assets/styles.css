@@ -704,16 +704,17 @@ body {
   z-index: 1501;
   background: var(--bg);
   border-radius: 20px 20px 0 0;
-  height: 90vh;
-  height: 90dvh;
-  max-height: 90vh;
-  max-height: 90dvh;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
   transform: translateY(100%);
   transition: transform 350ms var(--ease);
   box-shadow: 0 -10px 40px rgba(0,0,0,0.15);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-top: var(--safe-top);
 }
 .sheet.visible { transform: translateY(0); }
 .sheet-handle {
@@ -766,9 +767,10 @@ body {
 .sheet-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  padding: 16px 20px 20px;
+  overflow-y: scroll;
   -webkit-overflow-scrolling: touch;
+  padding: 16px 20px 20px;
+  overscroll-behavior: contain;
 }
 .sheet-body form { width: 100%; }
 .sheet-body .form-group input,

@@ -451,8 +451,11 @@ function openSheet(poster) {
 
         <div class="form-group">
           <label>住所</label>
-          <input type="text" id="f_address" value="${escapeAttr(state.selectedPoster.address || '')}" placeholder="船橋市○○町X-Y-Z">
-          <small>住所がわからない場合は空欄でも可。提供者か備考は入力してください。</small>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="text" id="f_address" value="${escapeAttr(state.selectedPoster.address || '')}" placeholder="船橋市○○町X-Y-Z" style="flex:1">
+            <button type="button" class="btn btn-secondary" id="btnOpenMap" style="flex:0 0 auto;width:auto">🗺️ 地図</button>
+          </div>
+          <small>「🗺️ 地図」をタップでGoogle Mapsナビ起動</small>
         </div>
 
         <div class="form-group">
@@ -538,6 +541,23 @@ function openSheet(poster) {
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
+  });
+
+  // 住所横の「🗺️ 地図」ボタン → Google Maps ナビ起動
+  document.getElementById('btnOpenMap').addEventListener('click', () => {
+    const addr = document.getElementById('f_address').value.trim();
+    const coords = document.getElementById('f_coords').value.trim();
+    let url = null;
+    const m = coords.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+    if (m) {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${m[1]},${m[2]}`;
+    } else if (addr) {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`;
+    } else {
+      showToast('住所か緯度経度を入力してください', 'error');
+      return;
+    }
+    window.open(url, '_blank');
   });
 
   // 写真追加
