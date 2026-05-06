@@ -258,15 +258,19 @@ function renderListView() {
   list.innerHTML = '';
   state.filteredPosters.slice(0, 200).forEach(p => {
     const status = STATUS_BY_KEY[p.status] || STATUS_OPTIONS[0];
+    const displayName = p.address
+      || p.provider_name
+      || (p.notes ? String(p.notes).split('\n')[0].slice(0, 40) : '')
+      || '名称未設定';
     const div = document.createElement('div');
     div.className = 'result-item';
     div.innerHTML =
       '<div class="result-item-row">' +
-        '<div class="result-name">' + escapeHtml(p.address || '住所未設定') + '</div>' +
+        '<div class="result-name">' + escapeHtml(displayName) + '</div>' +
         '<span class="status-badge ' + status.className + '">' + escapeHtml(p.status || '—') + '</span>' +
       '</div>' +
       '<div class="result-meta">' +
-        (p.provider_name ? '<span>' + escapeHtml(p.provider_name) + '</span>' : '') +
+        (p.provider_name && p.provider_name !== displayName ? '<span>' + escapeHtml(p.provider_name) + '</span>' : '') +
         (p.count ? '<span>· ' + p.count + '枚</span>' : '') +
         (p.updated_by ? '<span>· ' + escapeHtml(p.updated_by) + '</span>' : '') +
       '</div>';
@@ -336,6 +340,12 @@ function openSheet(poster) {
   const isNew = !poster;
   const status = STATUS_BY_KEY[state.selectedPoster.status] || STATUS_OPTIONS[0];
   const photos = parsePhotoUrls(state.selectedPoster.photo_urls);
+  const sheetTitle = isNew
+    ? '🆕 新規追加'
+    : (state.selectedPoster.address
+      || state.selectedPoster.provider_name
+      || (state.selectedPoster.notes ? String(state.selectedPoster.notes).split('\n')[0].slice(0, 40) : '')
+      || 'ポスター詳細');
 
   const navUrl = state.selectedPoster.lat && state.selectedPoster.lng
     ? `https://www.google.com/maps/dir/?api=1&destination=${state.selectedPoster.lat},${state.selectedPoster.lng}`
@@ -345,7 +355,7 @@ function openSheet(poster) {
 
   document.getElementById('sheetContent').innerHTML = `
     <div class="sheet-header">
-      <div class="sheet-title">${isNew ? '🆕 新規追加' : escapeHtml(state.selectedPoster.address || 'ポスター詳細')}</div>
+      <div class="sheet-title">${escapeHtml(sheetTitle)}</div>
       ${!isNew ? `<div class="sheet-meta">
         <span class="status-badge ${status.className}">${escapeHtml(state.selectedPoster.status)}</span>
         ${state.selectedPoster.id ? `<span>${escapeHtml(state.selectedPoster.id)}</span>` : ''}
@@ -360,8 +370,9 @@ function openSheet(poster) {
         </div>
 
         <div class="form-group">
-          <label>住所 <span style="color:var(--danger)">*</span></label>
-          <input type="text" id="f_address" required value="${escapeAttr(state.selectedPoster.address || '')}" placeholder="船橋市○○町X-Y-Z">
+          <label>住所</label>
+          <input type="text" id="f_address" value="${escapeAttr(state.selectedPoster.address || '')}" placeholder="船橋市○○町X-Y-Z">
+          <small>住所がわからない場合は空欄でも可。提供者か備考は入力してください。</small>
         </div>
 
         <div class="form-group">
