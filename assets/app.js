@@ -505,7 +505,7 @@ function openSheet(poster) {
         <button type="button" class="btn btn-primary" id="btnSave">💾 ${isNew ? '追加' : '保存'}</button>
         ${navUrl ? `<a href="${navUrl}" target="_blank" rel="noopener" class="btn">🧭 ナビ</a>` : ''}
       </div>
-      ${!isNew ? '<button type="button" class="btn btn-danger" id="btnDelete" style="width:100%">🗑 このポスター情報を削除</button>' : ''}
+      ${!isNew ? '<button type="button" class="btn btn-danger" id="btnDelete">🗑 削除する</button>' : ''}
     </div>
   `;
 
