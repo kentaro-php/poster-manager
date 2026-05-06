@@ -425,7 +425,7 @@ function openSheet(poster) {
   const status = STATUS_BY_KEY[state.selectedPoster.status] || STATUS_OPTIONS[0];
   const photos = parsePhotoUrls(state.selectedPoster.photo_urls);
   const sheetTitle = isNew
-    ? '🆕 新規追加'
+    ? '新規追加'
     : (state.selectedPoster.address
       || state.selectedPoster.provider_name
       || (state.selectedPoster.notes ? String(state.selectedPoster.notes).split('\n')[0].slice(0, 40) : '')
@@ -920,7 +920,7 @@ function buildMapMarkers(query) {
         '</div>' +
         '<div style="display:flex;gap:6px">' +
           '<a href="' + navUrl + '" target="_blank" rel="noopener" style="flex:1;background:var(--primary);color:white;padding:8px 10px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;text-decoration:none">🧭 ナビ起動</a>' +
-          '<a class="popup-detail-link" style="flex:1;background:var(--bg-3);color:var(--text);padding:8px 10px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;cursor:pointer">📝 編集</a>' +
+          '<a class="popup-detail-link" style="flex:1;background:var(--bg-3);color:var(--text);padding:8px 10px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;cursor:pointer">編集</a>' +
         '</div>';
       div.querySelector('.popup-detail-link').addEventListener('click', () => {
         state.map.closePopup();

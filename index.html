@@ -28,7 +28,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
 
-<link rel="stylesheet" href="assets/styles.css?v=20260506-184204">
+<link rel="stylesheet" href="assets/styles.css?v=20260506-184631">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js" defer></script>
@@ -39,7 +39,7 @@
 <!-- 初回設定モーダル -->
 <div class="setup-modal" id="setupModal">
   <div class="setup-card">
-    <div class="setup-icon">📋</div>
+    <div class="setup-icon"></div>
     <h2>初回設定</h2>
     <p class="setup-desc">使用するスタッフ名と接続先を設定してください。<br>この設定は端末ごとに保存されます。</p>
 
@@ -103,7 +103,7 @@
 
     <section class="section">
       <div class="section-head">
-        <div class="section-title"><span class="section-emoji">📊</span>ステータス別</div>
+        <div class="section-title">ステータス別</div>
         <button class="btn-tiny" id="refreshBtn">🔄 更新</button>
       </div>
       <div class="legend-row" id="statusLegend"></div>
@@ -111,21 +111,21 @@
 
     <section class="section">
       <div class="section-head">
-        <div class="section-title"><span class="section-emoji">👥</span>担当者別</div>
+        <div class="section-title">担当者別</div>
       </div>
       <div class="rank-list" id="staffRank"></div>
     </section>
 
     <section class="section">
       <div class="section-head">
-        <div class="section-title"><span class="section-emoji">📝</span>最近の更新</div>
+        <div class="section-title">最近の更新</div>
       </div>
       <div class="log-list" id="recentLog"></div>
     </section>
 
     <section class="section">
       <div class="section-head">
-        <div class="section-title"><span class="section-emoji">📥</span>CSVインポート</div>
+        <div class="section-title">CSVインポート</div>
       </div>
       <p class="section-desc">Excelで作ったCSVをアップロードして一括登録</p>
       <input type="file" id="csvInput" accept=".csv,text/csv" style="display:none">
@@ -207,6 +207,6 @@
 <!-- トースト通知 -->
 <div class="toast" id="toast"></div>
 
-<script src="assets/app.js?v=20260506-184204"></script>
+<script src="assets/app.js?v=20260506-184631"></script>
 </body>
 </html>

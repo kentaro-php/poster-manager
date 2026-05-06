@@ -85,8 +85,8 @@ body {
 .setup-icon {
   font-size: 40px;
   text-align: center;
-  margin-bottom: 12px;
 }
+.setup-icon:empty { display: none; }
 .setup-card h2 {
   font-size: 22px;
   font-weight: 700;
