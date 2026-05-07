@@ -48,11 +48,14 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+*::before,
+*::after { box-sizing: border-box; }
 html, body {
   height: 100%;
   width: 100%;
   max-width: 100vw;
   overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 body {
   font-family: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
@@ -712,6 +715,8 @@ body {
   position: fixed;
   bottom: 0; left: 0; right: 0;
   z-index: 1501;
+  width: 100%;
+  max-width: 100vw;
   background: var(--bg);
   border-radius: 20px 20px 0 0;
   height: 85vh;
@@ -722,6 +727,7 @@ body {
   transition: transform 350ms var(--ease);
   box-shadow: 0 -10px 40px rgba(0,0,0,0.15);
   overflow: hidden;
+  touch-action: pan-y;
 }
 .sheet.visible { transform: translateY(0); }
 
@@ -730,6 +736,9 @@ body {
   inset: 0;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .sheet-handle {
@@ -769,6 +778,9 @@ body {
   flex-shrink: 0;
   padding: 24px 56px 16px 20px;
   border-bottom: 1px solid var(--border);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .sheet-title {
   font-size: 18px;
@@ -787,18 +799,45 @@ body {
 .sheet-body {
   flex: 1 1 0;
   min-height: 0;
+  min-width: 0;
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 16px 20px 20px;
   overscroll-behavior: contain;
+  touch-action: pan-y;
 }
-.sheet-body form { width: 100%; }
+.sheet-body form,
+.sheet-body .form-group {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
 .sheet-body .form-group input,
 .sheet-body .form-group textarea,
 .sheet-body .form-group select {
+  min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
+}
+.sheet-body .form-group > div[style*="display:flex"] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.sheet-body .form-group > div[style*="display:flex"] input {
+  flex: 1 1 auto !important;
+  min-width: 0;
+}
+.sheet-body .form-group > div[style*="display:flex"] .btn {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  max-width: 38%;
+  padding-left: 10px;
+  padding-right: 10px;
+  white-space: nowrap;
 }
 .sheet-footer {
   flex-shrink: 0;
@@ -808,16 +847,23 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .sheet-footer .btn-row {
   margin: 0;
   display: flex;
   gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
 }
 .sheet-footer .btn-row .btn {
   height: 52px;
   font-size: 16px;
   font-weight: 600;
+  min-width: 0;
 }
 .sheet-footer .btn-danger {
   height: 48px;
@@ -945,11 +991,15 @@ body {
 /* ステータスセレクター */
 .status-selector {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 6px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 .status-option {
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -962,6 +1012,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .status-option.selected {
   border-color: var(--primary);
