@@ -882,7 +882,7 @@ function renderPhotoGallery(photos) {
     thumb.innerHTML =
       '<img src="' + escapeAttr(src) + '" alt="ポスター写真">' +
       '<button type="button" class="photo-thumb-remove" aria-label="削除">×</button>';
-    thumb.querySelector('img').addEventListener('click', () => window.open(src, '_blank'));
+    thumb.querySelector('img').addEventListener('click', () => openPhotoViewer(src));
     thumb.querySelector('.photo-thumb-remove').addEventListener('click', (e) => {
       if (e.target.classList.contains('photo-thumb-remove')) {
         e.stopPropagation();
@@ -899,6 +899,45 @@ function renderPhotoGallery(photos) {
   if (!wrap.children.length) {
     wrap.innerHTML = '<div class="photo-empty">この端末では写真を表示できません</div>';
   }
+}
+
+function openPhotoViewer(src) {
+  let viewer = document.getElementById('photoViewer');
+  if (!viewer) {
+    viewer = document.createElement('div');
+    viewer.id = 'photoViewer';
+    viewer.className = 'photo-viewer';
+    viewer.innerHTML =
+      '<button type="button" class="photo-viewer-close" aria-label="写真を閉じる">×</button>' +
+      '<div class="photo-viewer-stage">' +
+        '<img alt="拡大写真">' +
+      '</div>';
+    document.body.appendChild(viewer);
+
+    viewer.addEventListener('click', (e) => {
+      if (e.target === viewer || e.target.classList.contains('photo-viewer-stage')) {
+        closePhotoViewer();
+      }
+    });
+    viewer.querySelector('.photo-viewer-close').addEventListener('click', closePhotoViewer);
+    viewer.querySelector('img').addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.currentTarget.classList.toggle('zoomed');
+    });
+  }
+
+  const img = viewer.querySelector('img');
+  img.classList.remove('zoomed');
+  img.src = src;
+  viewer.classList.add('visible');
+  document.body.classList.add('photo-viewer-open');
+}
+
+function closePhotoViewer() {
+  const viewer = document.getElementById('photoViewer');
+  if (!viewer) return;
+  viewer.classList.remove('visible');
+  document.body.classList.remove('photo-viewer-open');
 }
 
 function closeSheet() {
@@ -1240,7 +1279,13 @@ function setupSheetCloseHandlers() {
   document.getElementById('sheetClose').addEventListener('click', closeSheet);
   document.getElementById('sheetHandle').addEventListener('click', closeSheet);
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeSheet();
+    if (e.key === 'Escape') {
+      if (document.getElementById('photoViewer')?.classList.contains('visible')) {
+        closePhotoViewer();
+      } else {
+        closeSheet();
+      }
+    }
   });
 }
 
