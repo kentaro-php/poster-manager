@@ -9,6 +9,9 @@
 <title>ポスター管理</title>
 <meta name="description" content="政党ポスター掲示場所の管理ツール">
 <meta name="robots" content="noindex">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
@@ -28,7 +31,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
 
-<link rel="stylesheet" href="assets/styles.css?v=20260507-1705">
+<link rel="stylesheet" href="assets/styles.css?v=20260507-1730">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js" defer></script>
@@ -165,7 +168,7 @@
           <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           <input class="map-search" id="mapSearchInput" placeholder="地図上で絞り込む" autocomplete="off">
         </div>
-        <button class="btn-icon" id="locateMeBtn" aria-label="現在地">📍</button>
+        <button class="btn-icon" id="locateMeBtn" aria-label="住所ピン更新">📌</button>
       </div>
       <div id="map"></div>
       <div class="map-pin-list" id="mapPinList"></div>
@@ -208,6 +211,6 @@
 <!-- トースト通知 -->
 <div class="toast" id="toast"></div>
 
-<script src="assets/app.js?v=20260507-1705"></script>
+<script src="assets/app.js?v=20260507-1730"></script>
 </body>
 </html>

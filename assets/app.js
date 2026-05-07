@@ -537,10 +537,23 @@ function buildNavUrl(p) {
   if (p.lat && p.lng) {
     return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
   }
-  if (p.address) {
-    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(p.address)}`;
+  const address = getPosterAddress(p);
+  if (address) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
   }
   return null;
+}
+
+function getPosterAddress(p) {
+  if (!p) return '';
+  const address = String(p.address || '').trim();
+  if (address) return address;
+  const notes = String(p.notes || '').trim();
+  if (!notes) return '';
+  const match = notes.match(/(?:設置場所|住所|所在地)\s*[：:]\s*([^\n\r]+)/);
+  if (match && match[1]) return match[1].trim();
+  const firstLine = notes.split(/\r?\n/).map(s => s.trim()).find(Boolean);
+  return firstLine && firstLine.length <= 40 ? firstLine : '';
 }
 
 function normalizeMapAddress(address) {
@@ -558,7 +571,7 @@ function hasCoords(p) {
 
 function mapFilterMatches(p, q) {
   if (!q) return true;
-  const hay = [p.address, p.provider_name, p.notes, p.status, p.id]
+  const hay = [getPosterAddress(p), p.provider_name, p.notes, p.status, p.id]
     .filter(Boolean).join(' ').toLowerCase();
   return hay.includes(q);
 }
@@ -1039,11 +1052,15 @@ function setupCsvImport() {
 /* ============ タブ切替 ============ */
 function setupTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
+    tab.addEventListener('click', async () => {
       const target = tab.dataset.view;
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === target));
       document.getElementById('fabAdd').style.display = target === 'mapView' ? 'none' : '';
+
+      if (target === 'mapView' && state.posters.length === 0) {
+        await reload();
+      }
 
       if (target === 'mapView' && !state.initialMapBuilt) {
         initMap();
@@ -1081,7 +1098,7 @@ function initMap() {
 
   buildMapMarkers('');
   fitMapToMarkers();
-  attemptLocate();
+  setupMapPinRefresh();
 
   // 住所はあるが座標が無いものを自動ジオコーディング
   setTimeout(() => geocodePostersWithoutCoords(), 1000);
@@ -1100,14 +1117,15 @@ function writeGeocodeCache(cache) {
 }
 
 async function geocodePoster(p, cache = readGeocodeCache(), persist = true) {
-  if (!p || !p.address) return null;
-  const cacheKey = normalizeMapAddress(p.address);
-  let coords = cache[cacheKey] || cache[p.address];
+  const posterAddress = getPosterAddress(p);
+  if (!p || !posterAddress) return null;
+  const cacheKey = normalizeMapAddress(posterAddress);
+  let coords = cache[cacheKey] || cache[posterAddress];
   if (!coords) {
     const queries = [
-      normalizeMapAddress(p.address),
-      '千葉県 ' + normalizeMapAddress(p.address),
-      p.address,
+      normalizeMapAddress(posterAddress),
+      '千葉県 ' + normalizeMapAddress(posterAddress),
+      posterAddress,
     ].filter((v, i, arr) => v && arr.indexOf(v) === i);
 
     for (const query of queries) {
@@ -1125,7 +1143,7 @@ async function geocodePoster(p, cache = readGeocodeCache(), persist = true) {
           if (lat > 35.55 && lat < 35.85 && lon > 139.85 && lon < 140.15) {
             coords = { lat, lng: lon };
             cache[cacheKey] = coords;
-            cache[p.address] = coords;
+            cache[posterAddress] = coords;
             break;
           }
         }
@@ -1148,7 +1166,7 @@ async function geocodePostersWithoutCoords() {
   const cache = readGeocodeCache();
 
   const targets = state.posters.filter(p => {
-    if (!p.address) return false;
+    if (!getPosterAddress(p)) return false;
     if (hasCoords(p)) return false;
     return true;
   });
@@ -1210,7 +1228,7 @@ function buildMapMarkers(query) {
   state.cluster.clearLayers();
   state.mapMarkers = {};
   const q = (query || '').toLowerCase().trim();
-  const allPosters = state.posters.filter(p => mapFilterMatches(p, q));
+  const allPosters = state.posters.filter(p => (getPosterAddress(p) || hasCoords(p)) && mapFilterMatches(p, q));
   const visiblePosters = [];
 
   allPosters.forEach(p => {
@@ -1229,7 +1247,7 @@ function buildMapMarkers(query) {
     marker.bindPopup(() => {
       const div = document.createElement('div');
       const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-      const title = p.address || p.provider_name || (p.notes ? String(p.notes).split('\n')[0].slice(0, 30) : '名称未設定');
+      const title = getPosterAddress(p) || p.provider_name || (p.notes ? String(p.notes).split('\n')[0].slice(0, 30) : '名称未設定');
       div.innerHTML =
         '<div style="font-weight:600;margin-bottom:4px;font-size:14px">' + escapeHtml(title) + '</div>' +
         '<div style="color:var(--text-2);font-size:13px;margin-bottom:10px">' +
@@ -1257,7 +1275,7 @@ function buildMapMarkers(query) {
 function renderMapPinList(posters, visibleCount = posters.length) {
   const wrap = document.getElementById('mapPinList');
   if (!wrap) return;
-  const sorted = [...posters].sort((a, b) => String(a.address || '').localeCompare(String(b.address || ''), 'ja'));
+  const sorted = [...posters].sort((a, b) => String(getPosterAddress(a) || '').localeCompare(String(getPosterAddress(b) || ''), 'ja'));
   if (sorted.length === 0) {
     wrap.innerHTML =
       '<div class="map-pin-head"><strong>ピン一覧</strong><span>0件</span></div>' +
@@ -1271,7 +1289,7 @@ function renderMapPinList(posters, visibleCount = posters.length) {
   const scroll = wrap.querySelector('.map-pin-scroll');
   sorted.forEach(p => {
     const status = STATUS_BY_KEY[p.status] || STATUS_OPTIONS[0];
-    const title = p.address || p.provider_name || p.id || '名称未設定';
+    const title = getPosterAddress(p) || p.provider_name || p.id || '名称未設定';
     const coordsReady = hasCoords(p);
     const item = document.createElement('button');
     item.type = 'button';
@@ -1314,44 +1332,17 @@ function renderMapPinList(posters, visibleCount = posters.length) {
   });
 }
 
-function attemptLocate() {
+function setupMapPinRefresh() {
   const btn = document.getElementById('locateMeBtn');
-  btn.addEventListener('click', () => {
-    showToast('現在地を取得中…');
-    if (!navigator.geolocation) {
-      showToast('このブラウザでは現在地を使えません', 'error');
+  btn.addEventListener('click', async () => {
+    if (state.mapGeocoding) {
+      showToast('住所ピンを作成中です');
       return;
     }
-    const onSuccess = (pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      state.userLocation = [lat, lng];
-      if (state.userMarker) state.map.removeLayer(state.userMarker);
-      state.userMarker = L.marker([lat, lng], {
-        icon: L.divIcon({ className: '', html: '<div class="user-marker"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
-        zIndexOffset: 1000,
-      }).addTo(state.map);
-      state.map.setView([lat, lng], 16);
-      showToast('現在地に移動', 'success');
-    };
-    const onFail = (err) => {
-      navigator.geolocation.getCurrentPosition(
-        onSuccess,
-        (err2) => {
-          const code = err2 && err2.code;
-          const message = code === 1
-            ? '位置情報が許可されていません。Safariの設定で許可してください'
-            : '現在地は取得できません。住所ピンは表示できます';
-          showToast(message, 'error');
-        },
-        { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 }
-      );
-    };
-    navigator.geolocation.getCurrentPosition(
-      onSuccess,
-      onFail,
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-    );
+    showToast('住所ピンを更新します');
+    await geocodePostersWithoutCoords();
+    buildMapMarkers(document.getElementById('mapSearchInput').value || '');
+    fitMapToMarkers();
   });
 }
 
