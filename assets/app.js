@@ -186,7 +186,34 @@ async function api(action, payload, method = 'GET') {
 
 async function fetchPosters() {
   const result = await api('list', null, 'GET');
-  return result.items || [];
+  return (result.items || []).map(normalizePoster);
+}
+
+function firstValue(obj, keys) {
+  for (const key of keys) {
+    if (obj && obj[key] !== undefined && obj[key] !== null && String(obj[key]).trim() !== '') {
+      return obj[key];
+    }
+  }
+  return '';
+}
+
+function normalizePoster(raw) {
+  const p = { ...raw };
+  p.address = firstValue(p, ['address', '住所', '所在地', '設置場所']) || p.address || '';
+  p.lat = firstValue(p, ['lat', 'latitude', '緯度']) || p.lat || '';
+  p.lng = firstValue(p, ['lng', 'lon', 'longitude', '経度']) || p.lng || '';
+  p.provider_name = firstValue(p, ['provider_name', '提供者', '氏名', '名前']) || p.provider_name || '';
+  p.phone = firstValue(p, ['phone', '電話', '連絡先']) || p.phone || '';
+  p.count = firstValue(p, ['count', '枚数']) || p.count || 1;
+  p.status = firstValue(p, ['status', 'ステータス']) || p.status || '貼付済';
+  p.installed_at = firstValue(p, ['installed_at', '設置日', '貼付日']) || p.installed_at || '';
+  p.notes = firstValue(p, ['notes', '備考', 'メモ']) || p.notes || '';
+  p.photo_urls = firstValue(p, ['photo_urls', '写真', '写真URL']) || p.photo_urls || '';
+  p.updated_at = firstValue(p, ['updated_at', '更新日時']) || p.updated_at || '';
+  p.updated_by = firstValue(p, ['updated_by', '更新者', '担当者']) || p.updated_by || '';
+  applyCachedCoords(p);
+  return p;
 }
 
 async function createPoster(obj) {
@@ -822,6 +849,7 @@ function collectFormData() {
     if (m) {
       obj.lat = parseFloat(m[1]);
       obj.lng = parseFloat(m[2]);
+      cachePosterCoords(obj);
     }
   }
   return obj;
@@ -1116,6 +1144,29 @@ function writeGeocodeCache(cache) {
   try { localStorage.setItem('poster_geocode_v1', JSON.stringify(cache)); } catch (e) {}
 }
 
+function cachePosterCoords(p) {
+  const address = getPosterAddress(p);
+  if (!address || !hasCoords(p)) return;
+  const coords = { lat: parseFloat(p.lat), lng: parseFloat(p.lng) };
+  const cache = readGeocodeCache();
+  cache[normalizeMapAddress(address)] = coords;
+  cache[address] = coords;
+  writeGeocodeCache(cache);
+}
+
+function applyCachedCoords(p) {
+  if (!p || hasCoords(p)) return p;
+  const address = getPosterAddress(p);
+  if (!address) return p;
+  const cache = readGeocodeCache();
+  const coords = cache[normalizeMapAddress(address)] || cache[address];
+  if (coords && !isNaN(parseFloat(coords.lat)) && !isNaN(parseFloat(coords.lng))) {
+    p.lat = coords.lat;
+    p.lng = coords.lng;
+  }
+  return p;
+}
+
 async function geocodePoster(p, cache = readGeocodeCache(), persist = true) {
   const posterAddress = getPosterAddress(p);
   if (!p || !posterAddress) return null;
@@ -1224,12 +1275,17 @@ function guessMapCenter() {
 }
 
 function buildMapMarkers(query) {
-  if (!state.cluster) return;
-  state.cluster.clearLayers();
-  state.mapMarkers = {};
   const q = (query || '').toLowerCase().trim();
   const allPosters = state.posters.filter(p => (getPosterAddress(p) || hasCoords(p)) && mapFilterMatches(p, q));
   const visiblePosters = [];
+
+  if (!state.cluster) {
+    renderMapPinList(allPosters, 0);
+    return;
+  }
+
+  state.cluster.clearLayers();
+  state.mapMarkers = {};
 
   allPosters.forEach(p => {
     const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
@@ -1283,7 +1339,7 @@ function renderMapPinList(posters, visibleCount = posters.length) {
     return;
   }
   wrap.innerHTML =
-    '<div class="map-pin-head"><strong>ピン一覧</strong><span>' + visibleCount + '/' + sorted.length + '件</span></div>' +
+    '<div class="map-pin-head"><strong>住所一覧</strong><span>ピン' + visibleCount + '件 / 一覧' + sorted.length + '件</span></div>' +
     (state.mapGeocoding ? '<div class="map-pin-progress">住所からピン作成中 ' + state.mapGeocodeDone + '/' + state.mapGeocodeTotal + '</div>' : '') +
     '<div class="map-pin-scroll"></div>';
   const scroll = wrap.querySelector('.map-pin-scroll');
@@ -1303,7 +1359,7 @@ function renderMapPinList(posters, visibleCount = posters.length) {
           escapeHtml(p.status || '—') +
           (p.count ? ' · ' + escapeHtml(p.count) + '枚' : '') +
           (p.provider_name ? ' · ' + escapeHtml(p.provider_name) : '') +
-          (coordsReady ? '' : ' · ピン作成待ち') +
+          (coordsReady ? ' · 地図表示可' : ' · タップでピン作成') +
         '</span>' +
         renewalBadgeHtml(p, true) +
       '</span>';

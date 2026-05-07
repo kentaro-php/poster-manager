@@ -1051,12 +1051,12 @@ body {
 }
 .sheet-footer {
   flex-shrink: 0;
-  padding: 16px 20px calc(var(--safe-bottom) + 20px);
+  padding: 10px 12px calc(var(--safe-bottom) + 12px);
   background: var(--bg);
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -1064,24 +1064,26 @@ body {
 .sheet-footer .btn-row {
   margin: 0;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: nowrap;
   min-width: 0;
   max-width: 100%;
 }
 .sheet-footer .btn-row .btn {
-  height: 52px;
-  font-size: 16px;
+  height: 44px;
+  font-size: 14px;
   font-weight: 600;
   min-width: 0;
+  border-radius: 9px;
 }
 .sheet-footer .btn-danger {
-  height: 48px;
-  font-size: 15px;
+  height: 38px;
+  font-size: 14px;
   font-weight: 600;
   background: transparent;
   color: var(--danger);
   border: 1px solid rgba(255, 59, 48, 0.25);
+  border-radius: 9px;
 }
 .sheet-footer .btn-danger:active {
   background: rgba(255, 59, 48, 0.08);
