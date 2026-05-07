@@ -16,6 +16,8 @@ const STATUS_BY_KEY = Object.fromEntries(STATUS_OPTIONS.map(s => [s.key, s]));
 
 // 設定（localStorageに保存）
 const SETTINGS_KEY = 'poster_manager_settings';
+const LOCAL_PHOTO_PREFIX = 'local-photo:';
+const LOCAL_PHOTO_STORAGE_PREFIX = 'poster_manager_photo_';
 let settings = {
   staffName: '',
   gasUrl: '',
@@ -42,6 +44,7 @@ const state = {
   statusFilter: 'all',
   map: null,
   cluster: null,
+  mapMarkers: {},
   initialMapBuilt: false,
   userLocation: null,
   userMarker: null,
@@ -49,6 +52,102 @@ const state = {
 };
 
 const FALLBACK_CENTER = [35.6946, 139.9826]; // 船橋市
+const RENEWAL_DUE_MONTHS = 6;
+const RENEWAL_OVERDUE_MONTHS = 12;
+
+function parseLocalDate(value) {
+  if (!value) return null;
+  const m = String(value).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function addMonths(date, months) {
+  const d = new Date(date);
+  const targetMonth = d.getMonth() + months;
+  d.setMonth(targetMonth);
+  if (d.getMonth() !== ((targetMonth % 12) + 12) % 12) {
+    d.setDate(0);
+  }
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function formatDateJP(date) {
+  if (!date) return '';
+  return date.toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' });
+}
+
+function getRenewalInfo(poster) {
+  const installed = parseLocalDate(poster && poster.installed_at);
+  if (!installed) return null;
+  const today = startOfToday();
+  const dueDate = addMonths(installed, RENEWAL_DUE_MONTHS);
+  const overdueDate = addMonths(installed, RENEWAL_OVERDUE_MONTHS);
+  const days = Math.max(0, Math.floor((today - installed) / 86400000));
+
+  if (today >= overdueDate) {
+    return {
+      level: 'overdue',
+      label: '1年以上',
+      message: `設置から${days}日。早めに張り替え確認`,
+      dateLabel: `1年目安: ${formatDateJP(overdueDate)}`,
+      days,
+      dueDate,
+      overdueDate,
+    };
+  }
+  if (today >= dueDate) {
+    return {
+      level: 'due',
+      label: '張替時期',
+      message: `設置から${days}日。張り替え時期です`,
+      dateLabel: `半年目安: ${formatDateJP(dueDate)}`,
+      days,
+      dueDate,
+      overdueDate,
+    };
+  }
+  return {
+    level: 'ok',
+    label: '張替前',
+    message: `張り替え目安: ${formatDateJP(dueDate)}`,
+    dateLabel: `半年目安: ${formatDateJP(dueDate)}`,
+    days,
+    dueDate,
+    overdueDate,
+  };
+}
+
+function getRenewalCounts() {
+  return state.posters.reduce((counts, p) => {
+    const info = getRenewalInfo(p);
+    if (info && info.level === 'due') counts.due++;
+    if (info && info.level === 'overdue') counts.overdue++;
+    return counts;
+  }, { due: 0, overdue: 0 });
+}
+
+function renewalBadgeHtml(poster, compact = false) {
+  const info = getRenewalInfo(poster);
+  if (!info || info.level === 'ok') return '';
+  const text = compact ? info.label : `${info.label}: ${info.message}`;
+  return `<span class="renewal-badge renewal-${info.level}">${escapeHtml(text)}</span>`;
+}
+
+function getPosterMarkerKey(poster) {
+  return String((poster && poster.id) || `${poster && poster.address}|${poster && poster.lat}|${poster && poster.lng}`);
+}
 
 /* ============ Toast ============ */
 function showToast(text, type = '') {
@@ -323,7 +422,6 @@ function renderListView() {
       || p.provider_name
       || (p.notes ? String(p.notes).split('\n')[0].slice(0, 40) : '')
       || '名称未設定';
-    const navUrl = buildNavUrl(p);
     const div = document.createElement('div');
     div.className = 'result-item';
     div.innerHTML =
@@ -334,20 +432,15 @@ function renderListView() {
         '<div class="result-item-row">' +
           '<div class="result-name">' + escapeHtml(displayName) + '</div>' +
           '<span class="status-badge ' + status.className + '">' + escapeHtml(p.status || '—') + '</span>' +
-          (navUrl ? '<a class="item-nav-btn" href="' + navUrl + '" target="_blank" rel="noopener" aria-label="ナビ起動">🧭</a>' : '') +
         '</div>' +
         '<div class="result-meta">' +
           (p.provider_name && p.provider_name !== displayName ? '<span>' + escapeHtml(p.provider_name) + '</span>' : '') +
           (p.count ? '<span>· ' + p.count + '枚</span>' : '') +
           (p.updated_by ? '<span>· ' + escapeHtml(p.updated_by) + '</span>' : '') +
         '</div>' +
+        renewalBadgeHtml(p) +
       '</div>';
     setupSwipeableItem(div, p);
-    // ナビボタンクリックは詳細を開かない
-    const navBtn = div.querySelector('.item-nav-btn');
-    if (navBtn) {
-      navBtn.addEventListener('click', (e) => e.stopPropagation());
-    }
     list.appendChild(div);
   });
   if (state.filteredPosters.length > 200) {
@@ -361,6 +454,7 @@ function renderListView() {
 function renderFilterChips() {
   const wrap = document.getElementById('filterChips');
   const counts = { all: state.posters.length };
+  const renewalCounts = getRenewalCounts();
   state.posters.forEach(p => {
     counts[p.status] = (counts[p.status] || 0) + 1;
   });
@@ -375,6 +469,26 @@ function renderFilterChips() {
     renderListView();
   });
   wrap.appendChild(allBtn);
+
+  const dueBtn = document.createElement('button');
+  dueBtn.className = 'chip chip-renewal-due' + (state.statusFilter === 'renewal_due' ? ' active' : '');
+  dueBtn.innerHTML = '<span>張替時期</span><span class="rank-count-unit">' + renewalCounts.due + '</span>';
+  dueBtn.addEventListener('click', () => {
+    state.statusFilter = 'renewal_due';
+    renderFilterChips();
+    renderListView();
+  });
+  wrap.appendChild(dueBtn);
+
+  const overdueBtn = document.createElement('button');
+  overdueBtn.className = 'chip chip-renewal-overdue' + (state.statusFilter === 'renewal_overdue' ? ' active' : '');
+  overdueBtn.innerHTML = '<span>1年以上</span><span class="rank-count-unit">' + renewalCounts.overdue + '</span>';
+  overdueBtn.addEventListener('click', () => {
+    state.statusFilter = 'renewal_overdue';
+    renderFilterChips();
+    renderListView();
+  });
+  wrap.appendChild(overdueBtn);
 
   STATUS_OPTIONS.forEach(s => {
     const c = counts[s.key] || 0;
@@ -397,7 +511,15 @@ function renderFilterChips() {
 function applyFilters() {
   const q = state.searchQuery.toLowerCase().trim();
   state.filteredPosters = state.posters.filter(p => {
-    if (state.statusFilter !== 'all' && p.status !== state.statusFilter) return false;
+    if (state.statusFilter === 'renewal_due') {
+      const info = getRenewalInfo(p);
+      if (!info || info.level !== 'due') return false;
+    } else if (state.statusFilter === 'renewal_overdue') {
+      const info = getRenewalInfo(p);
+      if (!info || info.level !== 'overdue') return false;
+    } else if (state.statusFilter !== 'all' && p.status !== state.statusFilter) {
+      return false;
+    }
     if (q) {
       const hay = [p.address, p.provider_name, p.notes, p.updated_by, p.id]
         .filter(Boolean).join(' ').toLowerCase();
@@ -424,6 +546,7 @@ function openSheet(poster) {
   const isNew = !poster;
   const status = STATUS_BY_KEY[state.selectedPoster.status] || STATUS_OPTIONS[0];
   const photos = parsePhotoUrls(state.selectedPoster.photo_urls);
+  const renewalInfo = getRenewalInfo(state.selectedPoster);
   const sheetTitle = isNew
     ? '新規追加'
     : (state.selectedPoster.address
@@ -440,6 +563,7 @@ function openSheet(poster) {
         <span class="status-badge ${status.className}">${escapeHtml(state.selectedPoster.status)}</span>
         ${state.selectedPoster.id ? `<span>${escapeHtml(state.selectedPoster.id)}</span>` : ''}
         ${state.selectedPoster.updated_at ? `<span>· ${formatRelativeTime(state.selectedPoster.updated_at)}</span>` : ''}
+        ${renewalBadgeHtml(state.selectedPoster, true)}
       </div>` : ''}
     </div>
     <div class="sheet-body" id="sheetBody">
@@ -485,6 +609,9 @@ function openSheet(poster) {
         <div class="form-group">
           <label>設置日</label>
           <input type="date" id="f_installed" value="${escapeAttr(state.selectedPoster.installed_at || '')}">
+          <div class="renewal-alert ${renewalInfo ? 'renewal-' + renewalInfo.level : ''}" id="renewalAlert">
+            ${renewalInfo ? escapeHtml(renewalInfo.message) + '<br><span>' + escapeHtml(renewalInfo.dateLabel) + '</span>' : '設置日を入れると張り替え目安を表示します'}
+          </div>
         </div>
 
         <div class="form-group">
@@ -503,7 +630,7 @@ function openSheet(poster) {
     <div class="sheet-footer">
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btnSave">💾 ${isNew ? '追加' : '保存'}</button>
-        ${navUrl ? `<a href="${navUrl}" target="_blank" rel="noopener" class="btn">🧭 ナビ</a>` : ''}
+        ${navUrl ? `<a href="${navUrl}" target="_blank" rel="noopener" class="btn">ナビ</a>` : ''}
       </div>
       ${!isNew ? '<button type="button" class="btn btn-danger" id="btnDelete">🗑 削除する</button>' : ''}
     </div>
@@ -525,6 +652,16 @@ function openSheet(poster) {
 
   // 写真ギャラリー
   renderPhotoGallery(photos);
+
+  document.getElementById('f_installed').addEventListener('input', () => {
+    state.selectedPoster.installed_at = document.getElementById('f_installed').value;
+    const alert = document.getElementById('renewalAlert');
+    const info = getRenewalInfo(state.selectedPoster);
+    alert.className = 'renewal-alert ' + (info ? 'renewal-' + info.level : '');
+    alert.innerHTML = info
+      ? escapeHtml(info.message) + '<br><span>' + escapeHtml(info.dateLabel) + '</span>'
+      : '設置日を入れると張り替え目安を表示します';
+  });
 
   // 現在地ボタン
   document.getElementById('btnUseLoc').addEventListener('click', () => {
@@ -562,26 +699,34 @@ function openSheet(poster) {
 
   // 写真追加
   document.getElementById('btnAddPhoto').addEventListener('click', () => {
-    if (!settings.photoUrl) {
-      showToast('写真アップロード未設定（設定で追加してください）', 'error');
-      return;
-    }
     document.getElementById('f_photo').click();
   });
   document.getElementById('f_photo').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    showToast('写真をアップロード中…');
+    showToast(settings.photoUrl ? '写真をアップロード中…' : '写真を表示用に処理中…');
     try {
-      const url = await uploadPhoto(file, state.selectedPoster.id || 'new');
+      let url = null;
+      if (settings.photoUrl) {
+        try {
+          url = await uploadPhoto(file, state.selectedPoster.id || 'new');
+        } catch (err) {
+          showToast('アップロード失敗。端末内プレビューで追加します', 'error');
+        }
+      }
+      if (!url) {
+        const dataUrl = await resizePhotoForStorage(file);
+        url = saveLocalPhoto(dataUrl);
+      }
       const current = parsePhotoUrls(state.selectedPoster.photo_urls);
       current.push(url);
-      state.selectedPoster.photo_urls = current.join(',');
+      state.selectedPoster.photo_urls = serializePhotoUrls(current);
       renderPhotoGallery(current);
-      showToast('アップロード完了', 'success');
+      showToast(settings.photoUrl ? '写真を追加しました' : '写真を表示しました。保存で記録されます', 'success');
     } catch (err) {
-      showToast('アップロード失敗: ' + err.message, 'error');
+      showToast('写真追加失敗: ' + err.message, 'error');
     }
+    e.target.value = '';
   });
 
   // 削除
@@ -633,7 +778,7 @@ function collectFormData() {
     count: parseInt(document.getElementById('f_count').value) || 1,
     installed_at: document.getElementById('f_installed').value,
     notes: document.getElementById('f_notes').value.trim(),
-    photo_urls: state.selectedPoster.photo_urls || '',
+    photo_urls: serializePhotoUrls(parsePhotoUrls(state.selectedPoster.photo_urls)),
   };
   const coords = document.getElementById('f_coords').value.trim();
   if (coords) {
@@ -648,30 +793,112 @@ function collectFormData() {
 
 function parsePhotoUrls(s) {
   if (!s) return [];
-  return String(s).split(',').map(u => u.trim()).filter(Boolean);
+  const raw = String(s).trim();
+  if (!raw) return [];
+  if (raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(u => String(u).trim()).filter(Boolean);
+    } catch (e) {}
+  }
+  if (raw.includes('\n')) {
+    return raw.split('\n').map(u => u.trim()).filter(Boolean);
+  }
+  if (raw.startsWith('data:image/')) {
+    return [raw];
+  }
+  return raw.split(',').map(u => u.trim()).filter(Boolean);
+}
+
+function serializePhotoUrls(urls) {
+  const clean = (urls || []).map(u => String(u).trim()).filter(Boolean);
+  return clean.length ? JSON.stringify(clean) : '';
+}
+
+function saveLocalPhoto(dataUrl) {
+  const id = LOCAL_PHOTO_PREFIX + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  try {
+    localStorage.setItem(LOCAL_PHOTO_STORAGE_PREFIX + id, dataUrl);
+  } catch (e) {
+    throw new Error('端末の写真保存容量が不足しています');
+  }
+  return id;
+}
+
+function resolvePhotoSrc(url) {
+  if (!url) return '';
+  if (String(url).startsWith(LOCAL_PHOTO_PREFIX)) {
+    return localStorage.getItem(LOCAL_PHOTO_STORAGE_PREFIX + url) || '';
+  }
+  return url;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('写真を読み込めません'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('画像を表示できません'));
+    img.src = dataUrl;
+  });
+}
+
+async function resizePhotoForStorage(file) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const img = await loadImage(dataUrl);
+  const maxSide = 900;
+  const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+  const width = Math.max(1, Math.round(img.naturalWidth * scale));
+  const height = Math.max(1, Math.round(img.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', 0.68);
 }
 
 function renderPhotoGallery(photos) {
   const wrap = document.getElementById('photoGallery');
   if (!wrap) return;
   wrap.innerHTML = '';
+  if (!photos.length) {
+    wrap.innerHTML = '<div class="photo-empty">写真はまだありません</div>';
+    return;
+  }
   photos.forEach((url, i) => {
-    const thumb = document.createElement('div');
-    thumb.className = 'photo-thumb';
-    thumb.style.backgroundImage = 'url(' + url + ')';
-    thumb.innerHTML = '<button type="button" class="photo-thumb-remove" aria-label="削除">×</button>';
-    thumb.addEventListener('click', (e) => {
+    const src = resolvePhotoSrc(url);
+    if (!src) return;
+    const thumb = document.createElement('figure');
+    thumb.className = 'photo-card';
+    thumb.innerHTML =
+      '<img src="' + escapeAttr(src) + '" alt="ポスター写真">' +
+      '<button type="button" class="photo-thumb-remove" aria-label="削除">×</button>';
+    thumb.querySelector('img').addEventListener('click', () => window.open(src, '_blank'));
+    thumb.querySelector('.photo-thumb-remove').addEventListener('click', (e) => {
       if (e.target.classList.contains('photo-thumb-remove')) {
         e.stopPropagation();
+        if (String(url).startsWith(LOCAL_PHOTO_PREFIX)) {
+          try { localStorage.removeItem(LOCAL_PHOTO_STORAGE_PREFIX + url); } catch (err) {}
+        }
         photos.splice(i, 1);
-        state.selectedPoster.photo_urls = photos.join(',');
+        state.selectedPoster.photo_urls = serializePhotoUrls(photos);
         renderPhotoGallery(photos);
-        return;
       }
-      window.open(url, '_blank');
     });
     wrap.appendChild(thumb);
   });
+  if (!wrap.children.length) {
+    wrap.innerHTML = '<div class="photo-empty">この端末では写真を表示できません</div>';
+  }
 }
 
 function closeSheet() {
@@ -754,6 +981,7 @@ function setupTabs() {
       const target = tab.dataset.view;
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === target));
+      document.getElementById('fabAdd').style.display = target === 'mapView' ? 'none' : '';
 
       if (target === 'mapView' && !state.initialMapBuilt) {
         initMap();
@@ -786,10 +1014,7 @@ function initMap() {
   ).addTo(state.map);
   L.control.zoom({ position: 'bottomright' }).addTo(state.map);
 
-  state.cluster = L.markerClusterGroup({
-    showCoverageOnHover: false,
-    maxClusterRadius: 40,
-  });
+  state.cluster = L.layerGroup();
   state.map.addLayer(state.cluster);
 
   buildMapMarkers('');
@@ -890,7 +1115,9 @@ function guessMapCenter() {
 function buildMapMarkers(query) {
   if (!state.cluster) return;
   state.cluster.clearLayers();
+  state.mapMarkers = {};
   const q = (query || '').toLowerCase().trim();
+  const visiblePosters = [];
 
   state.posters.forEach(p => {
     const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
@@ -899,6 +1126,7 @@ function buildMapMarkers(query) {
       const hay = [p.address, p.provider_name, p.notes, p.status].filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(q)) return;
     }
+    visiblePosters.push(p);
     const status = STATUS_BY_KEY[p.status] || STATUS_OPTIONS[0];
     const marker = L.marker([lat, lng], {
       icon: L.divIcon({
@@ -917,9 +1145,10 @@ function buildMapMarkers(query) {
         '<div style="color:var(--text-2);font-size:13px;margin-bottom:10px">' +
           '<span class="status-badge ' + status.className + '" style="font-size:12px">' + escapeHtml(p.status) + '</span> ' +
           (p.count ? p.count + '枚' : '') +
+          renewalBadgeHtml(p, true) +
         '</div>' +
         '<div style="display:flex;gap:6px">' +
-          '<a href="' + navUrl + '" target="_blank" rel="noopener" style="flex:1;background:var(--primary);color:white;padding:8px 10px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;text-decoration:none">🧭 ナビ起動</a>' +
+          '<a href="' + navUrl + '" target="_blank" rel="noopener" style="flex:1;background:var(--primary);color:white;padding:8px 10px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;text-decoration:none">ナビ</a>' +
           '<a class="popup-detail-link" style="flex:1;background:var(--bg-3);color:var(--text);padding:8px 10px;border-radius:8px;text-align:center;font-size:13px;font-weight:600;cursor:pointer">編集</a>' +
         '</div>';
       div.querySelector('.popup-detail-link').addEventListener('click', () => {
@@ -928,7 +1157,56 @@ function buildMapMarkers(query) {
       });
       return div;
     });
+    marker.bindTooltip(title, { direction: 'top', offset: [0, -8], opacity: 0.9 });
+    state.mapMarkers[getPosterMarkerKey(p)] = marker;
     state.cluster.addLayer(marker);
+  });
+  renderMapPinList(visiblePosters);
+}
+
+function renderMapPinList(posters) {
+  const wrap = document.getElementById('mapPinList');
+  if (!wrap) return;
+  const sorted = [...posters].sort((a, b) => String(a.address || '').localeCompare(String(b.address || ''), 'ja'));
+  if (sorted.length === 0) {
+    wrap.innerHTML =
+      '<div class="map-pin-head"><strong>ピン一覧</strong><span>0件</span></div>' +
+      '<div class="map-pin-empty">地図に表示できる住所がありません</div>';
+    return;
+  }
+  wrap.innerHTML =
+    '<div class="map-pin-head"><strong>ピン一覧</strong><span>' + sorted.length + '件</span></div>' +
+    '<div class="map-pin-scroll"></div>';
+  const scroll = wrap.querySelector('.map-pin-scroll');
+  sorted.forEach(p => {
+    const status = STATUS_BY_KEY[p.status] || STATUS_OPTIONS[0];
+    const title = p.address || p.provider_name || p.id || '名称未設定';
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'map-pin-item';
+    item.dataset.markerKey = getPosterMarkerKey(p);
+    item.innerHTML =
+      '<span class="chip-dot" style="background:' + status.color + '"></span>' +
+      '<span class="map-pin-main">' +
+        '<span class="map-pin-title">' + escapeHtml(title) + '</span>' +
+        '<span class="map-pin-meta">' +
+          escapeHtml(p.status || '—') +
+          (p.count ? ' · ' + escapeHtml(p.count) + '枚' : '') +
+          (p.provider_name ? ' · ' + escapeHtml(p.provider_name) : '') +
+        '</span>' +
+        renewalBadgeHtml(p, true) +
+      '</span>';
+    item.addEventListener('click', () => {
+      const marker = state.mapMarkers[item.dataset.markerKey];
+      if (marker && state.map) {
+        const ll = marker.getLatLng();
+        state.map.setView(ll, Math.max(state.map.getZoom(), 17), { animate: true });
+        marker.openPopup();
+      } else {
+        openSheet(p);
+      }
+    });
+    scroll.appendChild(item);
   });
 }
 
