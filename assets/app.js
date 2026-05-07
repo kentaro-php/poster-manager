@@ -45,6 +45,9 @@ const state = {
   map: null,
   cluster: null,
   mapMarkers: {},
+  mapGeocoding: false,
+  mapGeocodeDone: 0,
+  mapGeocodeTotal: 0,
   initialMapBuilt: false,
   userLocation: null,
   userMarker: null,
@@ -538,6 +541,26 @@ function buildNavUrl(p) {
     return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(p.address)}`;
   }
   return null;
+}
+
+function normalizeMapAddress(address) {
+  const raw = String(address || '').trim();
+  if (!raw) return '';
+  if (raw.includes('千葉県') || raw.includes('船橋市')) return raw;
+  return '千葉県船橋市' + raw;
+}
+
+function hasCoords(p) {
+  const lat = parseFloat(p && p.lat);
+  const lng = parseFloat(p && p.lng);
+  return !isNaN(lat) && !isNaN(lng);
+}
+
+function mapFilterMatches(p, q) {
+  if (!q) return true;
+  const hay = [p.address, p.provider_name, p.notes, p.status, p.id]
+    .filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(q);
 }
 
 /* ============ 詳細・編集シート ============ */
@@ -1064,67 +1087,98 @@ function initMap() {
   setTimeout(() => geocodePostersWithoutCoords(), 1000);
 }
 
-/* 住所はあるが lat/lng がないポスターを Nominatim で自動ジオコーディング */
-async function geocodePostersWithoutCoords() {
-  const CACHE_KEY = 'poster_geocode_v1';
-  let cache = {};
+function readGeocodeCache() {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (raw) cache = JSON.parse(raw);
-  } catch (e) {}
+    return JSON.parse(localStorage.getItem('poster_geocode_v1') || '{}');
+  } catch (e) {
+    return {};
+  }
+}
 
-  const targets = state.posters.filter(p => {
-    if (!p.address) return false;
-    if (p.lat && p.lng) return false;
-    return true;
-  });
-  if (targets.length === 0) return;
+function writeGeocodeCache(cache) {
+  try { localStorage.setItem('poster_geocode_v1', JSON.stringify(cache)); } catch (e) {}
+}
 
-  showToast(`${targets.length}件の住所を地図上で位置取得中…`);
+async function geocodePoster(p, cache = readGeocodeCache(), persist = true) {
+  if (!p || !p.address) return null;
+  const cacheKey = normalizeMapAddress(p.address);
+  let coords = cache[cacheKey] || cache[p.address];
+  if (!coords) {
+    const queries = [
+      normalizeMapAddress(p.address),
+      '千葉県 ' + normalizeMapAddress(p.address),
+      p.address,
+    ].filter((v, i, arr) => v && arr.indexOf(v) === i);
 
-  let done = 0;
-  for (const p of targets) {
-    let coords = cache[p.address];
-    if (!coords) {
+    for (const query of queries) {
       try {
-        const addr = p.address.startsWith('船橋市') ? p.address : '船橋市' + p.address;
         const url = 'https://nominatim.openstreetmap.org/search?q=' +
-          encodeURIComponent('千葉県' + addr) +
-          '&format=json&limit=1&countrycodes=jp&accept-language=ja';
+          encodeURIComponent(query) +
+          '&format=json&limit=1&countrycodes=jp&accept-language=ja' +
+          '&viewbox=139.85,35.85,140.15,35.55&bounded=1';
         const res = await fetch(url);
+        if (!res.ok) continue;
         const data = await res.json();
         if (data && data[0]) {
           const lat = parseFloat(data[0].lat);
           const lon = parseFloat(data[0].lon);
           if (lat > 35.55 && lat < 35.85 && lon > 139.85 && lon < 140.15) {
             coords = { lat, lng: lon };
+            cache[cacheKey] = coords;
             cache[p.address] = coords;
+            break;
           }
         }
       } catch (e) {}
-      // Nominatim 利用規約（1秒あたり1リクエスト）
-      await new Promise(r => setTimeout(r, 1100));
-    }
-    if (coords) {
-      // メモリ上の posters にも反映（地図にも即反映）
-      p.lat = coords.lat;
-      p.lng = coords.lng;
-      // バックグラウンドでスプレッドシートにも保存
-      try {
-        await updatePoster({ id: p.id, lat: coords.lat, lng: coords.lng });
-      } catch (e) {}
-    }
-    done++;
-    if (done % 5 === 0 || done === targets.length) {
-      buildMapMarkers(document.getElementById('mapSearchInput').value || '');
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (e) {}
     }
   }
 
+  if (!coords) return null;
+  p.lat = coords.lat;
+  p.lng = coords.lng;
+  if (persist) {
+    try { await updatePoster({ id: p.id, lat: coords.lat, lng: coords.lng }); } catch (e) {}
+  }
+  writeGeocodeCache(cache);
+  return coords;
+}
+
+/* 住所はあるが lat/lng がないポスターを Nominatim で自動ジオコーディング */
+async function geocodePostersWithoutCoords() {
+  const cache = readGeocodeCache();
+
+  const targets = state.posters.filter(p => {
+    if (!p.address) return false;
+    if (hasCoords(p)) return false;
+    return true;
+  });
+  if (targets.length === 0) return;
+
+  state.mapGeocoding = true;
+  state.mapGeocodeDone = 0;
+  state.mapGeocodeTotal = targets.length;
+  buildMapMarkers(document.getElementById('mapSearchInput').value || '');
+  showToast(`${targets.length}件の住所からピンを作成中…`);
+
+  let done = 0;
+  for (const p of targets) {
+    await geocodePoster(p, cache, true);
+    done++;
+    state.mapGeocodeDone = done;
+    if (done % 5 === 0 || done === targets.length) {
+      buildMapMarkers(document.getElementById('mapSearchInput').value || '');
+      writeGeocodeCache(cache);
+    }
+    // Nominatim 利用規約（1秒あたり1リクエスト）
+    await new Promise(r => setTimeout(r, 1100));
+  }
+
+  state.mapGeocoding = false;
   buildMapMarkers(document.getElementById('mapSearchInput').value || '');
   fitMapToMarkers();
-  showToast('位置情報の取得完了', 'success');
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (e) {}
+  const withCoords = targets.filter(hasCoords).length;
+  showToast(`${withCoords}件のピンを作成しました`, withCoords ? 'success' : 'error');
+  writeGeocodeCache(cache);
 }
 
 /* 全ピンが入る範囲に地図を自動フィット */
@@ -1156,15 +1210,12 @@ function buildMapMarkers(query) {
   state.cluster.clearLayers();
   state.mapMarkers = {};
   const q = (query || '').toLowerCase().trim();
+  const allPosters = state.posters.filter(p => mapFilterMatches(p, q));
   const visiblePosters = [];
 
-  state.posters.forEach(p => {
+  allPosters.forEach(p => {
     const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
     if (isNaN(lat) || isNaN(lng)) return;
-    if (q) {
-      const hay = [p.address, p.provider_name, p.notes, p.status].filter(Boolean).join(' ').toLowerCase();
-      if (!hay.includes(q)) return;
-    }
     visiblePosters.push(p);
     const status = STATUS_BY_KEY[p.status] || STATUS_OPTIONS[0];
     const marker = L.marker([lat, lng], {
@@ -1200,29 +1251,31 @@ function buildMapMarkers(query) {
     state.mapMarkers[getPosterMarkerKey(p)] = marker;
     state.cluster.addLayer(marker);
   });
-  renderMapPinList(visiblePosters);
+  renderMapPinList(allPosters, visiblePosters.length);
 }
 
-function renderMapPinList(posters) {
+function renderMapPinList(posters, visibleCount = posters.length) {
   const wrap = document.getElementById('mapPinList');
   if (!wrap) return;
   const sorted = [...posters].sort((a, b) => String(a.address || '').localeCompare(String(b.address || ''), 'ja'));
   if (sorted.length === 0) {
     wrap.innerHTML =
       '<div class="map-pin-head"><strong>ピン一覧</strong><span>0件</span></div>' +
-      '<div class="map-pin-empty">地図に表示できる住所がありません</div>';
+      '<div class="map-pin-empty">住所データがありません</div>';
     return;
   }
   wrap.innerHTML =
-    '<div class="map-pin-head"><strong>ピン一覧</strong><span>' + sorted.length + '件</span></div>' +
+    '<div class="map-pin-head"><strong>ピン一覧</strong><span>' + visibleCount + '/' + sorted.length + '件</span></div>' +
+    (state.mapGeocoding ? '<div class="map-pin-progress">住所からピン作成中 ' + state.mapGeocodeDone + '/' + state.mapGeocodeTotal + '</div>' : '') +
     '<div class="map-pin-scroll"></div>';
   const scroll = wrap.querySelector('.map-pin-scroll');
   sorted.forEach(p => {
     const status = STATUS_BY_KEY[p.status] || STATUS_OPTIONS[0];
     const title = p.address || p.provider_name || p.id || '名称未設定';
+    const coordsReady = hasCoords(p);
     const item = document.createElement('button');
     item.type = 'button';
-    item.className = 'map-pin-item';
+    item.className = 'map-pin-item' + (coordsReady ? '' : ' pending');
     item.dataset.markerKey = getPosterMarkerKey(p);
     item.innerHTML =
       '<span class="chip-dot" style="background:' + status.color + '"></span>' +
@@ -1232,17 +1285,29 @@ function renderMapPinList(posters) {
           escapeHtml(p.status || '—') +
           (p.count ? ' · ' + escapeHtml(p.count) + '枚' : '') +
           (p.provider_name ? ' · ' + escapeHtml(p.provider_name) : '') +
+          (coordsReady ? '' : ' · ピン作成待ち') +
         '</span>' +
         renewalBadgeHtml(p, true) +
       '</span>';
-    item.addEventListener('click', () => {
+    item.addEventListener('click', async () => {
       const marker = state.mapMarkers[item.dataset.markerKey];
       if (marker && state.map) {
         const ll = marker.getLatLng();
         state.map.setView(ll, Math.max(state.map.getZoom(), 17), { animate: true });
         marker.openPopup();
       } else {
-        openSheet(p);
+        showToast('この住所のピンを作成中…');
+        const coords = await geocodePoster(p);
+        buildMapMarkers(document.getElementById('mapSearchInput').value || '');
+        if (coords && state.map) {
+          state.map.setView([coords.lat, coords.lng], 17, { animate: true });
+          const newMarker = state.mapMarkers[getPosterMarkerKey(p)];
+          if (newMarker) newMarker.openPopup();
+          showToast('ピンを作成しました', 'success');
+        } else {
+          showToast('この住所はピン化できませんでした', 'error');
+          openSheet(p);
+        }
       }
     });
     scroll.appendChild(item);
@@ -1253,21 +1318,39 @@ function attemptLocate() {
   const btn = document.getElementById('locateMeBtn');
   btn.addEventListener('click', () => {
     showToast('現在地を取得中…');
+    if (!navigator.geolocation) {
+      showToast('このブラウザでは現在地を使えません', 'error');
+      return;
+    }
+    const onSuccess = (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      state.userLocation = [lat, lng];
+      if (state.userMarker) state.map.removeLayer(state.userMarker);
+      state.userMarker = L.marker([lat, lng], {
+        icon: L.divIcon({ className: '', html: '<div class="user-marker"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+        zIndexOffset: 1000,
+      }).addTo(state.map);
+      state.map.setView([lat, lng], 16);
+      showToast('現在地に移動', 'success');
+    };
+    const onFail = (err) => {
+      navigator.geolocation.getCurrentPosition(
+        onSuccess,
+        (err2) => {
+          const code = err2 && err2.code;
+          const message = code === 1
+            ? '位置情報が許可されていません。Safariの設定で許可してください'
+            : '現在地は取得できません。住所ピンは表示できます';
+          showToast(message, 'error');
+        },
+        { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 }
+      );
+    };
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        state.userLocation = [lat, lng];
-        if (state.userMarker) state.map.removeLayer(state.userMarker);
-        state.userMarker = L.marker([lat, lng], {
-          icon: L.divIcon({ className: '', html: '<div class="user-marker"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
-          zIndexOffset: 1000,
-        }).addTo(state.map);
-        state.map.setView([lat, lng], 16);
-        showToast('現在地に移動', 'success');
-      },
-      (err) => showToast('位置情報を取得できません', 'error'),
-      { enableHighAccuracy: true, timeout: 10000 }
+      onSuccess,
+      onFail,
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   });
 }

@@ -694,16 +694,17 @@ body {
 
 .map-pin-list {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 520;
-  max-height: min(34vh, 280px);
+  width: 100%;
+  max-height: min(38vh, 320px);
   background: rgba(255,255,255,0.94);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(0,0,0,.08);
-  border-radius: 14px;
+  border-radius: 16px 16px 0 0;
   box-shadow: var(--shadow-md);
   overflow: hidden;
 }
@@ -729,9 +730,17 @@ body {
   font-feature-settings: "tnum";
 }
 .map-pin-scroll {
-  max-height: calc(min(34vh, 280px) - 42px);
+  max-height: calc(min(38vh, 320px) - 42px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+.map-pin-progress {
+  padding: 7px 12px;
+  background: rgba(255,159,10,.14);
+  color: #9a6100;
+  font-size: 12px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
 }
 .map-pin-item {
   width: 100%;
@@ -746,6 +755,9 @@ body {
   text-align: left;
   font-family: inherit;
   cursor: pointer;
+}
+.map-pin-item.pending {
+  opacity: .78;
 }
 .map-pin-item:last-child { border-bottom: none; }
 .map-pin-main {
@@ -773,6 +785,9 @@ body {
   color: var(--text-3);
   font-size: 13px;
   text-align: center;
+}
+.map-view .leaflet-bottom.leaflet-right {
+  bottom: min(38vh, 320px);
 }
 
 .cust-marker {
